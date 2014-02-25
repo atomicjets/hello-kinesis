@@ -2,29 +2,65 @@ require 'rubygems'
 require 'aws-sdk'
 require 'tweetstream'
 
-CONSUMER_KEY        = 'MJw4AQ9ICQhnc6YM6ZNGMg'
-CONSUMER_SECRET     = '86hQDp5UKa0OK2hYB3GDYGZdU6Z9QmdyBQvgj1t2nw'
-OAUTH_TOKEN         = '191736984-991O0iEzxsO5yYNEJ5aD8GGLwqEUMrGa8Htwhayy'
-OAUTH_TOKEN_SECRET  = 'utd50P1tWPuhaUALPiDIhwOFqj2BA5CCm1cEOTrPu0DbF'
-TWEET_LANGUAGES     = ['us','de']
-TWEET_KEYWORDS      = ['AWS','Kinesis','Sochi','Olympia','Amazon']
+
+if DATA.flock(File::LOCK_NB | File::LOCK_EX)
+  puts 'Added lock to make sure only one instance of this script is running'
+else
+  fail 'An instance of this script is already running'
+end
+
+@consumer_key       = ENV['CONSUMER_KEY']
+@consumer_secret    = ENV['CONSUMER_SECRET']
+@oauth_token        = ENV['OAUTH_TOKEN']
+@oauth_token_secret = ENV['OAUTH_TOKEN_SECRET']
+@tweet_keywords     = ENV['TWEET_KEYWORDS']
+@stream_name        = 'tweets'
+@kinesis_client     = AWS::Kinesis.new.client
+
 TweetStream.configure do |config|
-  config.consumer_key       = CONSUMER_KEY
-  config.consumer_secret    = CONSUMER_SECRET
-  config.oauth_token        = OAUTH_TOKEN
-  config.oauth_token_secret = OAUTH_TOKEN_SECRET
+  config.consumer_key       = @consumer_key
+  config.consumer_secret    = @consumer_secret
+  config.oauth_token        = @oauth_token
+  config.oauth_token_secret = @oauth_token_secret
   config.auth_method        = :oauth
 end
 
-puts "streaming: "
-k = AWS::Kinesis.new.client
+def validate_kinesis_stream(stream_name)
+  status = stream_status(stream_name)
+  if status == 'ACTIVE' 
+    return
+  elsif status == 'STREAM_DOES_NOT_EXIST'
+    # create stream if it doesn't exist
+    stream = @kinesis_client.create_stream(
+      :stream_name => stream_name,
+      :shard_count => 2
+    )
+    puts 'Waiting 30 seconds for stream to become active'
+    sleep 30
+  end 
+  #try again to see if status is active now
+  status = stream_status(stream_name)
+  fail "Stream is not in the 'ACTIVE' state. State: '#{status}'" unless status == 'ACTIVE'
+end
 
-TweetStream::Client.new.track(TWEET_KEYWORDS) do |status|
-  if TWEET_LANGUAGES.include?(status.lang)
-    puts "Text: #{status.text}"
-    puts "Lang: #{status.lang}"
-    puts "Name: #{status.user.screen_name}"
-    res = k.put_record(:stream_name => 'tweets', :data => status.text, :partition_key => status.user.screen_name)    
-    puts "Put record to Kinesis. Shard: #{res[:shard_id]} - sequence number: #{res[:sequence_number]}"
+def stream_status(stream_name)
+  begin
+    stream = @kinesis_client.describe_stream(:stream_name => stream_name)
+    return stream[:stream_description][:stream_status]
+  rescue AWS::Kinesis::Errors::ResourceNotFoundException => ex
+    return 'STREAM_DOES_NOT_EXIST'
   end
 end
+
+validate_kinesis_stream(@stream_name)
+puts "starting to consume twitter stream "
+TweetStream::Client.new.track(@tweet_keywords) do |status|
+  puts "Tweet Text:     #{status.text}"
+  puts "Tweet Language: #{status.lang}"
+  puts "User Name:      #{status.user.screen_name}"
+  res = k.put_record(:stream_name => 'tweets', :data => status.text, :partition_key => status.user.screen_name)    
+  puts "Put record to Kinesis. Shard: #{res[:shard_id]} - sequence number: #{res[:sequence_number]}"
+end
+
+__END__
+DO NOT REMOTE: required for the DATA object above.
