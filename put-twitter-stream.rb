@@ -58,7 +58,7 @@ TweetStream::Client.new.track(@tweet_keywords) do |status|
   puts "Tweet Text:     #{status.text}"
   puts "Tweet Language: #{status.lang}"
   puts "User Name:      #{status.user.screen_name}"
-  res = k.put_record(:stream_name => 'tweets', :data => status.text, :partition_key => status.user.screen_name)    
+  res = @kinesis_client.put_record(:stream_name => 'tweets', :data => status.text, :partition_key => status.user.screen_name)    
   puts "Put record to Kinesis. Shard: #{res[:shard_id]} - sequence number: #{res[:sequence_number]}"
 end
 
