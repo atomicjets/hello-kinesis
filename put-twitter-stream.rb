@@ -13,7 +13,7 @@ end
 @consumer_secret    = ENV['CONSUMER_SECRET']
 @oauth_token        = ENV['OAUTH_TOKEN']
 @oauth_token_secret = ENV['OAUTH_TOKEN_SECRET']
-@tweet_keywords     = ENV['TWEET_KEYWORDS']
+@tweet_keywords     = ENV['TWEET_KEYWORDS'].split(',')
 @stream_name        = 'tweets'
 @kinesis_client     = AWS::Kinesis.new.client
 
